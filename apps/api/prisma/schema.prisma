@@ -1,0 +1,424 @@
+// NOVA PANEL - Prisma schema (SQLite)
+// Run: prisma db push && prisma generate
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  username         String
+  passwordHash     String?
+  avatar           String?
+  role             String    @default("USER")
+  roleId           String?
+  roleModel        Role?     @relation(fields: [roleId], references: [id])
+  permissions      String    @default("[]") // extra permission overrides
+  balance          Float     @default(0) // wallet balance (USD)
+  coins            Int       @default(0) // AKF coins
+  bonusCoins       Int       @default(0)
+  referralCode     String?   @unique
+  referredById     String?
+  referredBy       User?     @relation("UserReferrals", fields: [referredById], references: [id])
+  referrals        User[]    @relation("UserReferrals")
+  emailVerifiedAt  DateTime?
+  verifyToken      String? // email verification token
+  verifyTokenExpiresAt DateTime?
+  resetToken       String? // password reset token (separate from email verification)
+  resetTokenExpiresAt DateTime?
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean   @default(false)
+  status           String    @default("active") // active | banned
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  servers        Server[]
+  transactions   Transaction[]
+  invoices       Invoice[]
+  notifications  Notification[]
+  tickets        Ticket[]
+  ticketMessages TicketMessage[]
+  checkins       Checkin[]
+  spinEntries    SpinEntry[]
+  referralsGiven Referral[]  @relation("ReferralReferred")
+  referralEarned Referral[]  @relation("ReferralReferrer")
+  auditLogs      AuditLog[]
+  taskCompletions TaskCompletion[]
+  giveawayEntries GiveawayEntry[]
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions String   @default("[]") // JSON array of permission keys
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  users       User[]
+}
+
+model Server {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  externalId    String? // pterodactyl application server id (null in demo mode)
+  uuid          String       @unique // panel short id
+  name          String
+  description   String?
+  status        String       @default("CREATING")
+  planId        String?
+  plan          Plan?        @relation(fields: [planId], references: [id])
+  billingCycle  String? // one_time | monthly | yearly | lifetime
+  renewsAt      DateTime?
+  price         Float        @default(0)
+  locationId    String?
+  nodeId        String?
+  nestId        String?
+  eggId         String?
+  eggName       String?
+  dockerImage   String?
+  startup       String?
+  environment   String       @default("{}") // JSON key/value
+  limits        String       @default("{}") // JSON {ram,swap,disk,io,cpu}
+  featureLimits String       @default("{}") // JSON {databases,allocations,backups}
+  allocationIds String       @default("[]") // JSON array
+  lastStartAt   DateTime?
+  suspendedAt   DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  databases    ServerDatabase[]
+  allocations  Allocation[]
+  backups      Backup[]
+  transactions Transaction[]
+}
+
+model Plan {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  price       Float    @default(0)
+  cycle       String   @default("one_time") // one_time | monthly | yearly | lifetime
+  ram         Int      @default(1024) // MB
+  swap        Int      @default(0)
+  cpu         Int      @default(100) // %
+  disk        Int      @default(10240) // MB
+  databases   Int      @default(1)
+  backups     Int      @default(1)
+  allocations Int      @default(1)
+  nestId      String?
+  eggId       String?
+  eggName     String?
+  dockerImage String?
+  locationId  String?
+  startup     String?
+  environment String   @default("{}")
+  active      Boolean  @default(true)
+  sort        Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  servers Server[]
+}
+
+model ShopItem {
+  id          String   @id @default(cuid())
+  type        String   @unique // ram | cpu | disk | databases | backups | allocations | slots
+  name        String
+  unit        String // "MB", "%", "GB", "DB", "BK", "AL", "slot"
+  price       Float    @default(0) // AKF coins per unit
+  minUnits    Int      @default(1)
+  maxPerUser  Int      @default(50)
+  stock       Int      @default(-1) // -1 unlimited
+  discount    Int      @default(0) // percent
+  enabled     Boolean  @default(true)
+  sort        Int      @default(0)
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind        String // credit | debit
+  currency    String // AKF | balance
+  amount      Float    @default(0)
+  description String
+  refType     String? // checkin | ad | referral | task | promo | spin | purchase | upgrade | admin | reward | giveaway | invoice | refund | bonus
+  refId       String?
+  meta        String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  serverId String?
+  server   Server? @relation(fields: [serverId], references: [id])
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  number      String   @unique
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Float    @default(0)
+  currency    String   @default("USD")
+  status      String   @default("pending") // draft | pending | paid | refunded | cancelled | failed
+  gateway     String? // akf | wallet | stripe | paypal | razorpay | upi | crypto | manual
+  description String?
+  items       String   @default("[]") // JSON array {type, label, amount}
+  promoCodeId String?
+  promoCode   PromoCode? @relation(fields: [promoCodeId], references: [id])
+  discount    Float    @default(0)
+  paidAt      DateTime?
+  dueAt       DateTime?
+  meta        String   @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  refundRequests RefundRequest[]
+}
+
+model RefundRequest {
+  id         String   @id @default(cuid())
+  invoiceId  String
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  userId     String
+  reason     String
+  status     String   @default("pending") // pending | approved | rejected
+  adminNote  String?
+  createdAt  DateTime @default(now())
+  resolvedAt DateTime?
+}
+
+model PromoCode {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  type        String    @default("percent") // percent | fixed
+  value       Float     @default(0)
+  minAmount   Float     @default(0)
+  maxUses     Int       @default(0) // 0 unlimited
+  usedCount   Int       @default(0)
+  perUserLimit Int      @default(0) // 0 unlimited
+  expiresAt   DateTime?
+  enabled     Boolean   @default(true)
+  description String?
+  createdAt   DateTime  @default(now())
+  invoices    Invoice[]
+}
+
+model Referral {
+  id              String   @id @default(cuid())
+  referrerId      String
+  referrer        User     @relation("ReferralReferrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId      String
+  referred        User     @relation("ReferralReferred", fields: [referredId], references: [id], onDelete: Cascade)
+  rewardReferrer  Int      @default(0)
+  rewardReferred  Int      @default(0)
+  status          String   @default("pending") // pending | paid
+  paidAt          DateTime?
+  createdAt       DateTime @default(now())
+}
+
+model Ticket {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject      String
+  category     String
+  priority     String         @default("medium") // low | medium | high | urgent
+  status       String         @default("open") // open | answered | closed
+  internalNote String?
+  closedById   String?
+  closedAt     DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  messages TicketMessage[]
+}
+
+model TicketMessage {
+  id          String   @id @default(cuid())
+  ticketId    String
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  body        String
+  attachments String   @default("[]") // JSON array [{name,url}]
+  isStaff     Boolean  @default(false)
+  isInternal  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // server_created | server_suspended | payment_received | resource_upgraded | ticket_reply | announcement | reward | system
+  title     String
+  body      String
+  data      String    @default("{}")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+model Checkin {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // daily | weekly | monthly
+  date      String // YYYY-MM-DD (or week key / month key)
+  reward    Int      @default(0)
+  streak    Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, kind, date])
+}
+
+model SpinEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  result    String
+  coins     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model RewardSetting {
+  key       String   @id
+  config    String   @default("{}") // JSON
+  updatedAt DateTime @updatedAt
+}
+
+model Task {
+  id            String           @id @default(cuid())
+  title         String
+  description   String?
+  type          String           @default("link") // link | vote | click | join_discord
+  url           String?
+  reward        Int              @default(0)
+  cooldownHours Int              @default(24)
+  enabled       Boolean          @default(true)
+  sort          Int              @default(0)
+  createdAt     DateTime         @default(now())
+  completions   TaskCompletion[]
+}
+
+model TaskCompletion {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reward    Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, userId])
+}
+
+model Giveaway {
+  id           String            @id @default(cuid())
+  title        String
+  description  String?
+  prize        String
+  coins        Int               @default(0)
+  startsAt     DateTime
+  endsAt       DateTime
+  status       String            @default("upcoming") // upcoming | running | ended
+  winnerId     String?
+  createdAt    DateTime          @default(now())
+  entries      GiveawayEntry[]
+}
+
+model GiveawayEntry {
+  id         String   @id @default(cuid())
+  giveawayId String
+  giveaway   Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([giveawayId, userId])
+}
+
+model ServerDatabase {
+  id              String   @id @default(cuid())
+  serverId        String
+  server          Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  name            String
+  host            String
+  port            Int      @default(3306)
+  username        String
+  passwordEnc     String
+  remote          String   @default("%")
+  createdAt       DateTime @default(now())
+}
+
+model Allocation {
+  id        String   @id @default(cuid())
+  serverId  String?
+  server    Server?  @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  nodeId    String?
+  ip        String
+  port      Int
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Backup {
+  id        String    @id @default(cuid())
+  serverId  String
+  server    Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  externalId String?
+  name      String
+  size      Float     @default(0)
+  locked    Boolean   @default(false)
+  path      String? // demo mode local file path
+  createdAt DateTime  @default(now())
+}
+
+model Announcement {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  type      String   @default("info") // info | warning | update | promo
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  username  String?
+  action    String
+  entity    String?
+  entityId  String?
+  meta      String   @default("{}")
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model EmailOutbox {
+  id        String   @id @default(cuid())
+  to        String
+  subject   String
+  body      String
+  status    String   @default("pending") // pending | sent | logged | failed
+  error     String?
+  createdAt DateTime @default(now())
+}
+
+model Settings {
+  key       String   @id
+  value     String // JSON
+  updatedAt DateTime @updatedAt
+}
