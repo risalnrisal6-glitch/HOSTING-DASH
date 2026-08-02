@@ -101,6 +101,15 @@ check_deps() {
 # Install
 # ──────────────────────────────────────────────
 
+# Older installs (or failed runs) may have a .env without DATABASE_URL,
+# which breaks `prisma db push`. Make sure it's always present.
+ensure_database_url() {
+  if [ -f apps/api/.env ] && ! grep -q '^DATABASE_URL=' apps/api/.env; then
+    echo 'DATABASE_URL="file:./dash.db"' >> apps/api/.env
+    warn "Added missing DATABASE_URL to apps/api/.env"
+  fi
+}
+
 install_panel() {
   banner
   check_deps
@@ -152,6 +161,8 @@ CORS_ORIGIN=http://localhost:3001
 EOF
     log "Random secrets generated and saved to apps/api/.env"
   fi
+
+  ensure_database_url
 
   # Push database schema
   info "Setting up database..."
@@ -340,6 +351,7 @@ update_panel() {
   npm rebuild esbuild @prisma/client 2>&1 | tee -a "$LOG_FILE" || true
 
   info "Migrating database..."
+  ensure_database_url
   cd apps/api
   npx prisma db push 2>&1 | tee -a "$LOG_FILE"
   npx prisma generate 2>&1 | tee -a "$LOG_FILE"
