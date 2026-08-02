@@ -83,8 +83,6 @@ export async function register(input: { email: string; username: string; passwor
 
   // Welcome bonus (admin-configurable)
   await grantWelcomeBonus(user.id);
-  const withBonus = await prisma.user.findUnique({ where: { id: user.id } });
-  if (withBonus) return publicUser(withBonus);
 
   // Referral rewards
   if (referredBy) {
@@ -120,7 +118,9 @@ export async function register(input: { email: string; username: string; passwor
       <p style="color:#94a3b8;font-size:13px">This link expires in 24 hours.</p>`));
   }
 
-  return publicUser(user);
+  // Re-fetch so the response reflects the welcome bonus credit
+  const fresh = await prisma.user.findUnique({ where: { id: user.id } });
+  return publicUser(fresh ?? user);
 }
 
 export async function login(email: string, password: string, ip?: string) {

@@ -121,12 +121,14 @@ export async function createPlanInvoice(userId: string, planId: string, cycle: s
   }
 
   const finalPrice = Math.max(0, Math.round((price - discount) * 100) / 100);
+  const currency = String((await settings.get("currency")) || "USD");
   const count = await prisma.invoice.count();
   const invoice = await prisma.invoice.create({
     data: {
       number: `INV-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`,
       userId,
       amount: finalPrice,
+      currency,
       description: `${plan.name} — ${cycle} plan`,
       items: JSON.stringify([{ type: "plan", label: `${plan.name} (${cycle})`, amount: finalPrice, planId: plan.id, cycle }]),
       promoCodeId: promo?.id,
@@ -250,9 +252,10 @@ export async function createCustomInvoice(
 export async function materializeCustomInvoice(userId: string, invoiceId: string, items: any[]) {
   const item = items.find((i) => i.type === "custom_server");
   if (!item) return;
+  const cfg = await getPricingConfig();
   const { createServerForUser } = await import("./server.service");
   const server = await createServerForUser(userId, {
-    name: `${item.ramGb}GB RAM · ${item.cores} Core${item.cores !== 1 ? "s" : ""} · ${item.diskGb}GB NVMe`,
+    name: `${item.ramGb}GB RAM · ${item.cores} Core${item.cores !== 1 ? "s" : ""} · ${item.diskGb}GB ${cfg.storageLabel}`,
     limits: { ram: item.ramGb * 1024, swap: 0, disk: item.diskGb * 1024, io: 500, cpu: item.cores * 100 },
     featureLimits: { databases: 1, allocations: 1, backups: 1 },
     cycle: item.cycle,

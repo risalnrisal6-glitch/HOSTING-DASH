@@ -151,12 +151,14 @@ export async function cancelInvoice(userId: string, invoiceId: string) {
 
 export async function createTopupInvoice(userId: string, amount: number, description = "Wallet top-up") {
   if (amount < 1 || amount > 5000) throw ApiError.badRequest("Top-up between $1 and $5000");
+  const currency = String((await settings.get("currency")) || "USD");
   const count = await prisma.invoice.count();
   return prisma.invoice.create({
     data: {
       number: `INV-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`,
       userId,
       amount,
+      currency,
       description,
       items: JSON.stringify([{ type: "balance", label: description, amount }]),
     },
