@@ -164,6 +164,38 @@ export async function watchAd(userId: string): Promise<{ reward: number }> {
   return { reward };
 }
 
+// ---------- AFK earning (idle time in panel) ----------
+
+/**
+ * Grants coins while the user keeps the panel open. Admin configurable:
+ * afk_enabled, afk_coins_per_min, afk_interval_minutes, afk_daily_limit.
+ * Enforced server-side: one grant per interval + a daily cap, so the
+ * heartbeat client can never out-earn the configured rates.
+ */
+export async function afkEarn(userId: string): Promise<{ reward: number; nextIn: number }> {
+  if ((await settings.get("afk_enabled")) !== true) throw ApiError.badRequest("AFK rewards are disabled");
+  const perMin = Number((await settings.get("afk_coins_per_min")) ?? 30) || 0;
+  const intervalMin = Number((await settings.get("afk_interval_minutes")) ?? 1) || 1;
+  const dailyLimit = Number((await settings.get("afk_daily_limit")) ?? 500) || 0;
+  if (perMin <= 0) throw ApiError.badRequest("AFK reward amount is not configured");
+
+  // Cooldown: at most one grant per interval
+  const since = new Date(Date.now() - intervalMin * 60000);
+  const recent = await prisma.transaction.findFirst({ where: { userId, refType: "afk", createdAt: { gte: since } } });
+  if (recent) {
+    const nextIn = Math.max(1, Math.ceil((recent.createdAt.getTime() + intervalMin * 60000 - Date.now()) / 1000));
+    return { reward: 0, nextIn };
+  }
+
+  // Daily cap
+  const today = new Date().toISOString().slice(0, 10);
+  const todayCount = await prisma.transaction.count({ where: { userId, refType: "afk", createdAt: { gte: new Date(today + "T00:00:00Z") } } });
+  if (dailyLimit > 0 && todayCount >= dailyLimit) throw ApiError.badRequest("Daily AFK reward limit reached");
+
+  await wallet.creditCoins(userId, perMin, `AFK reward — ${intervalMin} minute${intervalMin > 1 ? "s" : ""} active in panel`, "afk");
+  return { reward: perMin, nextIn: intervalMin * 60 };
+}
+
 // ---------- Tasks ----------
 
 export async function claimTask(userId: string, taskId: string): Promise<{ reward: number }> {

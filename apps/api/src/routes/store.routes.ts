@@ -40,6 +40,31 @@ router.post(
   })
 );
 
+router.get(
+  "/pricing",
+  asyncH(async (_req, res) => {
+    res.json({ ok: true, data: await store.getPricingConfig() });
+  })
+);
+
+router.post(
+  "/custom/invoice",
+  asyncH(async (req, res) => {
+    const data = validateBody(
+      z.object({
+        ramGb: z.number().min(1).max(1024),
+        diskGb: z.number().min(1).max(10000),
+        cores: z.number().min(1).max(128),
+        cycle: z.enum(["one_time", "monthly", "yearly", "lifetime"]),
+      }),
+      req
+    );
+    const invoice = await store.createCustomInvoice((req as AuthedRequest).user.id, data);
+    await audit(req, "store.custom_invoice", "invoice", invoice.id, { ramGb: data.ramGb, diskGb: data.diskGb, cores: data.cores, cycle: data.cycle });
+    res.status(201).json({ ok: true, data: invoice });
+  })
+);
+
 router.post(
   "/plan/invoice",
   asyncH(async (req, res) => {

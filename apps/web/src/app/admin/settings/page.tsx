@@ -4,11 +4,11 @@ import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import {
-  Globe, Mail, KeyRound, CreditCard, ShieldCheck, Save, PlugZap, CheckCircle2, XCircle, Loader2, Server as ServerIcon, Inbox, Palette,
+  Globe, Mail, KeyRound, CreditCard, ShieldCheck, Save, PlugZap, CheckCircle2, XCircle, Loader2, Server as ServerIcon, Inbox, Palette, Coins, Gauge,
 } from "lucide-react";
 import { get, put, post } from "@/lib/api";
-import { Card, Button, Input, Toggle, Badge, Tabs } from "@/components/ui";
-import { cn } from "@/lib/format";
+import { Card, Button, Input, Toggle, Badge, Tabs, Select } from "@/components/ui";
+import { cn, formatCurrency } from "@/lib/format";
 
 export default function AdminSettingsPage() {
   const { data, mutate } = useSWR<Record<string, any>>("/admin/settings", (url: string) => get(url));
@@ -78,6 +78,7 @@ export default function AdminSettingsPage() {
   const sections = [
     { id: "branding", label: "Branding", icon: Palette },
     { id: "pterodactyl", label: "Pterodactyl API", icon: Globe },
+    { id: "pricing", label: "Pricing & Rewards", icon: Coins },
     { id: "mail", label: "Mail", icon: Mail },
     { id: "oauth", label: "OAuth", icon: KeyRound },
     { id: "payments", label: "Payments", icon: CreditCard },
@@ -155,6 +156,77 @@ export default function AdminSettingsPage() {
             </div>
           </div>
         </Card>
+      )}
+
+      {tab === "pricing" && (
+        <div className="space-y-5">
+          <Card title="Per-resource pricing" subtitle={`Customers build their own server (RAM + storage + CPU) and pay the calculated total in ${settings.currency || "INR"}.`}>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <Toggle checked={settings.pricing_enabled !== false} onChange={(v) => set("pricing_enabled", v)} label="Enable build-your-own servers in the store" />
+                <Badge color={settings.pricing_enabled !== false ? "green" : "amber"}>{settings.pricing_enabled !== false ? "Enabled" : "Hidden"}</Badge>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Input label={`RAM price (per 1GB) — ${settings.currency || "INR"}`} type="number" value={settings.pricing_ram_per_gb ?? 40} onChange={(e) => set("pricing_ram_per_gb", Number(e.target.value))} icon={<Gauge className="h-4 w-4" />} />
+                <Input label={`Storage price (per 1GB ${settings.pricing_storage_label || "NVMe SSD"})`} type="number" value={settings.pricing_disk_per_gb ?? 15} onChange={(e) => set("pricing_disk_per_gb", Number(e.target.value))} icon={<Gauge className="h-4 w-4" />} />
+                <Input label="CPU price (per 1 core)" type="number" value={settings.pricing_cpu_per_core ?? 60} onChange={(e) => set("pricing_cpu_per_core", Number(e.target.value))} icon={<Gauge className="h-4 w-4" />} />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Input label="Storage label" value={settings.pricing_storage_label || "NVMe SSD"} onChange={(e) => set("pricing_storage_label", e.target.value)} placeholder="NVMe SSD" />
+                <Select label="Default billing cycle" value={settings.pricing_cycle || "monthly"} onChange={(e) => set("pricing_cycle", e.target.value)}>
+                  <option value="one_time">One-time</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                  <option value="lifetime">Lifetime</option>
+                </Select>
+                <Input label="Currency code" value={settings.currency || "INR"} onChange={(e) => set("currency", e.target.value)} placeholder="INR" hint="Displayed on the store & invoices (e.g. INR, USD)" />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <p className="mb-2 text-xs font-semibold text-slate-400">RAM limits (GB)</p>
+                  <div className="flex gap-2">
+                    <Input type="number" value={settings.pricing_min_ram ?? 1} onChange={(e) => set("pricing_min_ram", Number(e.target.value))} />
+                    <Input type="number" value={settings.pricing_max_ram ?? 128} onChange={(e) => set("pricing_max_ram", Number(e.target.value))} />
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-semibold text-slate-400">Storage limits (GB)</p>
+                  <div className="flex gap-2">
+                    <Input type="number" value={settings.pricing_min_disk ?? 1} onChange={(e) => set("pricing_min_disk", Number(e.target.value))} />
+                    <Input type="number" value={settings.pricing_max_disk ?? 2000} onChange={(e) => set("pricing_max_disk", Number(e.target.value))} />
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-semibold text-slate-400">CPU limits (cores)</p>
+                  <div className="flex gap-2">
+                    <Input type="number" value={settings.pricing_min_cores ?? 1} onChange={(e) => set("pricing_min_cores", Number(e.target.value))} />
+                    <Input type="number" value={settings.pricing_max_cores ?? 32} onChange={(e) => set("pricing_max_cores", Number(e.target.value))} />
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-600">Min · Max — customers can pick any value between the two. Example: 2GB RAM + 10GB NVMe + 1 core at 40/15/60 = {formatCurrency(2 * (settings.pricing_ram_per_gb ?? 40) + 10 * (settings.pricing_disk_per_gb ?? 15) + 1 * (settings.pricing_cpu_per_core ?? 60), settings.currency || "INR")}/mo.</p>
+            </div>
+          </Card>
+
+          <Card title={`Welcome bonus (${settings.coin_name || "AKF"} coins)`} subtitle="New users receive coins on signup — great for onboarding.">
+            <div className="space-y-4">
+              <Toggle checked={settings.welcome_bonus_enabled !== false} onChange={(v) => set("welcome_bonus_enabled", v)} label="Give new users a welcome bonus" />
+              <Input label={`Welcome bonus amount (${settings.coin_name || "AKF"} coins)`} type="number" value={settings.welcome_bonus_coins ?? 100} onChange={(e) => set("welcome_bonus_coins", Number(e.target.value))} icon={<Coins className="h-4 w-4" />} />
+            </div>
+          </Card>
+
+          <Card title={`AFK earning (${settings.coin_name || "AKF"} coins)`} subtitle="Users earn coins while they keep the panel open. Server-enforced with a cooldown + daily cap.">
+            <div className="space-y-4">
+              <Toggle checked={settings.afk_enabled === true} onChange={(v) => set("afk_enabled", v)} label="Enable AFK rewards" />
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Input label={`Coins per interval (${settings.coin_name || "AKF"})`} type="number" value={settings.afk_coins_per_min ?? 30} onChange={(e) => set("afk_coins_per_min", Number(e.target.value))} icon={<Coins className="h-4 w-4" />} />
+                <Input label="Interval (minutes)" type="number" value={settings.afk_interval_minutes ?? 1} onChange={(e) => set("afk_interval_minutes", Number(e.target.value))} />
+                <Input label="Daily cap (coins)" type="number" value={settings.afk_daily_limit ?? 500} onChange={(e) => set("afk_daily_limit", Number(e.target.value))} />
+              </div>
+              <p className="text-[11px] text-slate-600">Example: 30 coins every 1 minute, capped at 500/day — users earn while the panel is open.</p>
+            </div>
+          </Card>
+        </div>
       )}
 
       {tab === "mail" && (

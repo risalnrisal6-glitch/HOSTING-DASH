@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { AppShell } from "@/components/app-shell";
 import { FullPageLoader } from "@/components/ui";
+import { AfkEarner } from "@/components/afk-earner";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, isReady, isLoading } = useAuth();
@@ -25,5 +26,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <>
+      <AppShell>{children}</AppShell>
+      <AfkEarner />
+    </>
+  );
 }

@@ -14,10 +14,32 @@ export const DEFAULT_SETTINGS: Record<string, unknown> = {
   site_logo: "",
   site_favicon: "", // empty = default NOVA icon
   site_description: "Premium Pterodactyl hosting dashboard",
-  currency: "USD",
+  currency: "INR",
   coin_name: "AKF",
   wallet_enabled: true,
   coins_enabled: true,
+
+  // Pricing — per-resource build-your-own rates (admin configurable)
+  pricing_enabled: true,
+  pricing_ram_per_gb: 40, // INR per 1GB RAM
+  pricing_disk_per_gb: 15, // INR per 1GB NVMe SSD
+  pricing_cpu_per_core: 60, // INR per 1 CPU core
+  pricing_cycle: "monthly",
+  pricing_storage_label: "NVMe SSD",
+  pricing_min_ram: 1,
+  pricing_max_ram: 128,
+  pricing_min_disk: 1,
+  pricing_max_disk: 2000,
+  pricing_min_cores: 1,
+  pricing_max_cores: 32,
+
+  // Rewards — welcome bonus + AFK earning (admin configurable)
+  welcome_bonus_enabled: true,
+  welcome_bonus_coins: 100,
+  afk_enabled: true,
+  afk_coins_per_min: 30,
+  afk_interval_minutes: 1,
+  afk_daily_limit: 500,
   // Pterodactyl connection (secrets encrypted)
   panel_enabled: false,
   panel_url: "",
@@ -158,6 +180,23 @@ const PUBLIC_KEYS = [
   "coin_name",
   "wallet_enabled",
   "coins_enabled",
+  "pricing_enabled",
+  "pricing_ram_per_gb",
+  "pricing_disk_per_gb",
+  "pricing_cpu_per_core",
+  "pricing_cycle",
+  "pricing_storage_label",
+  "pricing_min_ram",
+  "pricing_max_ram",
+  "pricing_min_disk",
+  "pricing_max_disk",
+  "pricing_min_cores",
+  "pricing_max_cores",
+  "welcome_bonus_enabled",
+  "welcome_bonus_coins",
+  "afk_enabled",
+  "afk_coins_per_min",
+  "afk_interval_minutes",
   "panel_enabled",
   "security_registration",
   "security_email_verify",

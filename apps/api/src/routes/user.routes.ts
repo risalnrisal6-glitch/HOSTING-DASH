@@ -10,7 +10,7 @@ import { getUserServerSlots, listUserServers } from "../services/server.service"
 import { wallet } from "../services/wallet.service";
 import { getReferralStats } from "../services/referral.service";
 import { audit } from "../lib/audit";
-import { getCheckinStatus } from "../services/wallet.service";
+import { getCheckinStatus, afkEarn } from "../services/wallet.service";
 import { safeJson } from "../lib/pterodactyl";
 
 const router = Router();
@@ -134,6 +134,15 @@ router.post(
     const data = validateBody(z.object({ code: z.string().min(6).max(8) }), req);
     await auth.disableTwoFactor((req as AuthedRequest).user.id, data.code);
     res.json({ ok: true });
+  })
+);
+
+// ---- AFK earning heartbeat ----
+router.post(
+  "/afk",
+  asyncH(async (req, res) => {
+    const result = await afkEarn((req as AuthedRequest).user.id);
+    res.json({ ok: true, data: result });
   })
 );
 

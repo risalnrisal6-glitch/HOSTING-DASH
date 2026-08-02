@@ -94,6 +94,22 @@ export interface Plan {
   active: boolean;
 }
 
+export interface PricingConfig {
+  enabled: boolean;
+  ramPerGb: number;
+  diskPerGb: number;
+  cpuPerCore: number;
+  cycle: string;
+  storageLabel: string;
+  minRam: number;
+  maxRam: number;
+  minDisk: number;
+  maxDisk: number;
+  minCores: number;
+  maxCores: number;
+  currency: string;
+}
+
 export interface ShopItem {
   id: string;
   type: "ram" | "cpu" | "disk" | "databases" | "backups" | "allocations" | "slots";

@@ -3,7 +3,11 @@ import { settings } from "./settings";
 import { wallet } from "./wallet.service";
 import { ApiError } from "../lib/errors";
 import { notifyUser } from "./notify.service";
-import { materializePlanInvoice } from "./store.service";
+import { materializePlanInvoice, materializeCustomInvoice } from "./store.service";
+
+function currencySymbol(currency: string): string {
+  return currency === "INR" ? "₹" : "$";
+}
 
 // ============================================================
 // Billing — invoices, gateways, payment history, refunds.
@@ -73,7 +77,7 @@ export async function payInvoice(userId: string, invoiceId: string, gateway: str
 
   if (gateway === "wallet") {
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user || user.balance < invoice.amount) throw ApiError.badRequest(`Insufficient wallet balance (need $${invoice.amount.toFixed(2)})`);
+    if (!user || user.balance < invoice.amount) throw ApiError.badRequest(`Insufficient wallet balance (need ${currencySymbol(invoice.currency)}${invoice.amount.toFixed(2)})`);
     await wallet.debitBalance(userId, invoice.amount, `Paid invoice ${invoice.number}`, "invoice", invoice.id, { gateway: "wallet" });
     return markPaid(invoice.id, "wallet");
   }
@@ -104,6 +108,8 @@ export async function markPaid(invoiceId: string, gateway: string, opts: { byUse
   try {
     if (items.some((i) => i.type === "plan")) {
       await materializePlanInvoice(invoice.userId, invoiceId, items);
+    } else if (items.some((i) => i.type === "custom_server")) {
+      await materializeCustomInvoice(invoice.userId, invoiceId, items);
     } else if (items.some((i) => i.type === "balance")) {
       const balanceItem = items.find((i) => i.type === "balance");
       await wallet.creditBalance(invoice.userId, balanceItem.amount, `Balance top-up ${invoice.number}`, "invoice", invoice.id);
@@ -127,7 +133,7 @@ export async function markPaid(invoiceId: string, gateway: string, opts: { byUse
   await notifyUser(invoice.userId, {
     type: "payment_received",
     title: "Payment received ✅",
-    body: `Invoice ${invoice.number} for $${invoice.amount.toFixed(2)} was paid via ${gateway.toUpperCase()}.`,
+    body: `Invoice ${invoice.number} for ${currencySymbol(invoice.currency)}${invoice.amount.toFixed(2)} was paid via ${gateway.toUpperCase()}.`,
     data: { invoiceId: invoice.id },
   });
   return updated;

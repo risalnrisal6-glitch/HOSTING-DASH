@@ -171,3 +171,92 @@ function safeEnv(raw: string): Record<string, string> {
     return {};
   }
 }
+
+// ---------- Build-your-own server (per-resource pricing) ----------
+
+export interface PricingConfig {
+  enabled: boolean;
+  ramPerGb: number;
+  diskPerGb: number;
+  cpuPerCore: number;
+  cycle: string;
+  storageLabel: string;
+  minRam: number;
+  maxRam: number;
+  minDisk: number;
+  maxDisk: number;
+  minCores: number;
+  maxCores: number;
+  currency: string;
+}
+
+/** Admin-set per-resource rates (INR by default), read live from settings. */
+export async function getPricingConfig(): Promise<PricingConfig> {
+  const s = await settings.getAll();
+  return {
+    enabled: s.pricing_enabled !== false,
+    ramPerGb: Number(s.pricing_ram_per_gb) || 0,
+    diskPerGb: Number(s.pricing_disk_per_gb) || 0,
+    cpuPerCore: Number(s.pricing_cpu_per_core) || 0,
+    cycle: String(s.pricing_cycle || "monthly"),
+    storageLabel: String(s.pricing_storage_label || "NVMe SSD"),
+    minRam: Number(s.pricing_min_ram) || 1,
+    maxRam: Number(s.pricing_max_ram) || 128,
+    minDisk: Number(s.pricing_min_disk) || 1,
+    maxDisk: Number(s.pricing_max_disk) || 2000,
+    minCores: Number(s.pricing_min_cores) || 1,
+    maxCores: Number(s.pricing_max_cores) || 32,
+    currency: String(s.currency || "INR"),
+  };
+}
+
+export function computeCustomPrice(cfg: PricingConfig, ramGb: number, diskGb: number, cores: number): number {
+  return Math.round((ramGb * cfg.ramPerGb + diskGb * cfg.diskPerGb + cores * cfg.cpuPerCore) * 100) / 100;
+}
+
+/** Creates an invoice for a build-your-own server; server materializes on payment. */
+export async function createCustomInvoice(
+  userId: string,
+  input: { ramGb: number; diskGb: number; cores: number; cycle: string }
+) {
+  const cfg = await getPricingConfig();
+  if (!cfg.enabled) throw ApiError.badRequest("Custom server building is currently disabled");
+
+  const ramGb = Math.round(input.ramGb);
+  const diskGb = Math.round(input.diskGb);
+  const cores = Math.round(input.cores);
+  if (ramGb < cfg.minRam || ramGb > cfg.maxRam) throw ApiError.badRequest(`RAM must be between ${cfg.minRam} and ${cfg.maxRam} GB`);
+  if (diskGb < cfg.minDisk || diskGb > cfg.maxDisk) throw ApiError.badRequest(`Storage must be between ${cfg.minDisk} and ${cfg.maxDisk} GB`);
+  if (cores < cfg.minCores || cores > cfg.maxCores) throw ApiError.badRequest(`CPU must be between ${cfg.minCores} and ${cfg.maxCores} cores`);
+
+  const price = computeCustomPrice(cfg, ramGb, diskGb, cores);
+  if (price <= 0) throw ApiError.badRequest("Set resource prices in Admin → Settings → Pricing first");
+
+  const count = await prisma.invoice.count();
+  const invoice = await prisma.invoice.create({
+    data: {
+      number: `INV-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`,
+      userId,
+      amount: price,
+      currency: cfg.currency,
+      description: `Custom server — ${ramGb}GB RAM · ${cores} core${cores !== 1 ? "s" : ""} · ${diskGb}GB ${cfg.storageLabel} (${input.cycle})`,
+      items: JSON.stringify([{ type: "custom_server", label: `Custom server (${input.cycle})`, amount: price, ramGb, diskGb, cores, cycle: input.cycle }]),
+    },
+  });
+  return invoice;
+}
+
+/** Called by billing after a custom-server invoice is paid — deploys the server. */
+export async function materializeCustomInvoice(userId: string, invoiceId: string, items: any[]) {
+  const item = items.find((i) => i.type === "custom_server");
+  if (!item) return;
+  const { createServerForUser } = await import("./server.service");
+  const server = await createServerForUser(userId, {
+    name: `${item.ramGb}GB RAM · ${item.cores} Core${item.cores !== 1 ? "s" : ""} · ${item.diskGb}GB NVMe`,
+    limits: { ram: item.ramGb * 1024, swap: 0, disk: item.diskGb * 1024, io: 500, cpu: item.cores * 100 },
+    featureLimits: { databases: 1, allocations: 1, backups: 1 },
+    cycle: item.cycle,
+    price: item.amount,
+  });
+  return server;
+}

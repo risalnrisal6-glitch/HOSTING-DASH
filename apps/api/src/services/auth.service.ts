@@ -40,6 +40,14 @@ function generateReferralCode(username: string): string {
   return (base || "NOVA") + randomToken(4).toUpperCase().slice(0, 4);
 }
 
+/** Grants the admin-configurable welcome bonus (coins) on first signup. */
+async function grantWelcomeBonus(userId: string): Promise<void> {
+  if ((await settings.get("welcome_bonus_enabled")) !== true) return;
+  const amount = Math.max(0, Math.round(Number((await settings.get("welcome_bonus_coins")) ?? 100) || 0));
+  if (amount <= 0) return;
+  await wallet.creditCoins(userId, amount, "Welcome bonus 🎉", "welcome_bonus");
+}
+
 export async function register(input: { email: string; username: string; password: string; referralCode?: string }) {
   const registrationEnabled = await settings.get("security_registration");
   if (registrationEnabled === false) throw ApiError.forbidden("Registration is currently disabled");
@@ -72,6 +80,11 @@ export async function register(input: { email: string; username: string; passwor
       avatar: `https://api.dicebear.com/9.x/initials/svg?seed=${encodeURIComponent(input.username)}&backgroundColor=6366f1,8b5cf6,3b82f6`,
     },
   });
+
+  // Welcome bonus (admin-configurable)
+  await grantWelcomeBonus(user.id);
+  const withBonus = await prisma.user.findUnique({ where: { id: user.id } });
+  if (withBonus) return publicUser(withBonus);
 
   // Referral rewards
   if (referredBy) {
@@ -304,6 +317,7 @@ export async function oauthLogin(provider: "discord" | "google", code: string) {
         permissions: JSON.stringify([`oauth:${profile.oauthId}`]),
       },
     });
+    await grantWelcomeBonus(user.id);
   }
   if (user.status === "banned") throw ApiError.forbidden("Your account has been banned");
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
