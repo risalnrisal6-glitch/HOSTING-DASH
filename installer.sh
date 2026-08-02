@@ -132,15 +132,21 @@ install_panel() {
 
   # Setup environment
   if [ ! -f apps/api/.env ]; then
-    info "Creating default .env file..."
-    cat > apps/api/.env << 'EOF'
+    info "Creating .env with randomly generated secrets..."
+    # Generate strong random secrets so the API never runs with known
+    # placeholders (config.ts refuses to start in production without them).
+    JWT_SECRET_GEN="$(openssl rand -hex 24 2>/dev/null || head -c 48 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)"
+    JWT_REFRESH_GEN="$(openssl rand -hex 24 2>/dev/null || head -c 48 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 48)"
+    ENCRYPTION_KEY_GEN="$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | tr -dc 'a-f0-9' | head -c 64)"
+    cat > apps/api/.env << EOF
 NODE_ENV=development
 PORT=4000
-JWT_SECRET=change-this-to-a-random-secret
-JWT_REFRESH_SECRET=change-this-to-another-random-secret
+JWT_SECRET=${JWT_SECRET_GEN}
+JWT_REFRESH_SECRET=${JWT_REFRESH_GEN}
+ENCRYPTION_KEY=${ENCRYPTION_KEY_GEN}
 CORS_ORIGIN=http://localhost:3000
 EOF
-    log "Default .env created (edit apps/api/.env to customize)"
+    log "Random secrets generated and saved to apps/api/.env"
   fi
 
   # Push database schema
@@ -169,8 +175,9 @@ EOF
   echo -e "   Email:    admin@nova.dev"
   echo -e "   Password: Admin@12345"
   echo -e ""
-  echo -e "   ${YELLOW}Important:${NC} Edit apps/api/.env to set your own"
-  echo -e "   JWT secrets before going to production!"
+  echo -e "   ${YELLOW}Important:${NC} Strong random secrets were auto-generated."
+  echo -e "   Set NODE_ENV=production in apps/api/.env only after you"
+  echo -e "   have configured your Pterodactyl panel connection."
   echo -e ""
 }
 
