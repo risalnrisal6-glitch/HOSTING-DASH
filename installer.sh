@@ -5,7 +5,7 @@
 #  Host   : $(hostname)
 #  Docker : $(command -v docker &>/dev/null && echo "ON" || echo "OFF")
 #  Kubek  : $(command -v kubectl &>/dev/null && echo "ON" || echo "OFF")
-#  Port   : 8000
+#  Port   : PANEL 3001 & API 4000
 # ============================================================
 
 set -euo pipefail
@@ -128,6 +128,9 @@ install_panel() {
   # Install dependencies
   info "Installing npm dependencies..."
   npm install 2>&1 | tee -a "$LOG_FILE"
+  # Ensure native binaries (esbuild, Prisma client) are built even when npm's
+  # allow-scripts policy skipped their postinstall hooks.
+  npm rebuild esbuild @prisma/client 2>&1 | tee -a "$LOG_FILE" || true
   log "Dependencies installed"
 
   # Setup environment
@@ -141,10 +144,11 @@ install_panel() {
     cat > apps/api/.env << EOF
 NODE_ENV=development
 PORT=4000
+DATABASE_URL="file:./dash.db"
 JWT_SECRET=${JWT_SECRET_GEN}
 JWT_REFRESH_SECRET=${JWT_REFRESH_GEN}
 ENCRYPTION_KEY=${ENCRYPTION_KEY_GEN}
-CORS_ORIGIN=http://localhost:3000
+CORS_ORIGIN=http://localhost:3001
 EOF
     log "Random secrets generated and saved to apps/api/.env"
   fi
@@ -207,9 +211,9 @@ start_panel() {
   if [ -f /tmp/nova-web.pid ] && kill -0 "$(cat /tmp/nova-web.pid)" 2>/dev/null; then
     warn "Web server is already running (PID: $(cat /tmp/nova-web.pid))"
   else
-    info "Starting Web server on port 3000..."
+    info "Starting Web server on port 3001..."
     cd apps/web
-    nohup npx next start -p 3000 > /tmp/nova-web.log 2>&1 &
+    nohup npx next start -p 3001 > /tmp/nova-web.log 2>&1 &
     echo $! > /tmp/nova-web.pid
     cd "$INSTALL_DIR"
     log "Web server started (PID: $(cat /tmp/nova-web.pid))"
@@ -219,7 +223,7 @@ start_panel() {
   echo -e "${GREEN}${BOLD}║      🚀  NOVA PANEL IS NOW RUNNING           ║${NC}"
   echo -e "${GREEN}${BOLD}╚══════════════════════════════════════════════╝${NC}"
   echo -e ""
-  echo -e "   ${CYAN}Website:${NC}  http://localhost:3000"
+  echo -e "   ${CYAN}Website:${NC}  http://localhost:3001"
   echo -e "   ${CYAN}API:${NC}      http://localhost:4000"
   echo -e "   ${CYAN}Health:${NC}   http://localhost:4000/api/health"
   echo -e ""
@@ -266,7 +270,7 @@ terminal_console() {
   header "NOVA PANEL — Terminal Console"
   echo -e "   ${YELLOW}Access the server console by logging into the panel.${NC}"
   echo -e ""
-  echo -e "   ${CYAN}Web Console:${NC} http://localhost:3000/servers"
+  echo -e "   ${CYAN}Web Console:${NC} http://localhost:3001/servers"
   echo -e "   ${CYAN}API Health:${NC}  http://localhost:4000/api/health"
   echo -e ""
   echo -e "   ${YELLOW}Or connect directly to the API:${NC}"
@@ -311,6 +315,41 @@ view_logs() {
   esac
   echo ""
   read -rp "Press Enter to return to menu..."
+}
+
+# ──────────────────────────────────────────────
+# Update
+# ──────────────────────────────────────────────
+
+update_panel() {
+  header "Updating NOVA PANEL"
+
+  if [ ! -d "$INSTALL_DIR" ]; then
+    error "NOVA PANEL not installed. Select option 1 first."
+    return
+  fi
+
+  stop_panel
+
+  cd "$INSTALL_DIR"
+  info "Pulling latest code..."
+  git pull 2>&1 | tee -a "$LOG_FILE" || { error "Git pull failed — check network or local changes"; return; }
+
+  info "Installing dependencies..."
+  npm install 2>&1 | tee -a "$LOG_FILE"
+  npm rebuild esbuild @prisma/client 2>&1 | tee -a "$LOG_FILE" || true
+
+  info "Migrating database..."
+  cd apps/api
+  npx prisma db push 2>&1 | tee -a "$LOG_FILE"
+  npx prisma generate 2>&1 | tee -a "$LOG_FILE"
+  cd "$INSTALL_DIR"
+
+  info "Building production assets..."
+  npm run build 2>&1 | tee -a "$LOG_FILE"
+
+  log "Update complete — starting services..."
+  start_panel
 }
 
 # ──────────────────────────────────────────────
@@ -361,7 +400,8 @@ main_menu() {
     echo -e "   ${BOLD}${CYAN}4)${NC} Restart"
     echo -e "   ${BOLD}${CYAN}5)${NC} Terminal (Console)"
     echo -e "   ${BOLD}${CYAN}6)${NC} Logs (Info/Status)"
-    echo -e "   ${BOLD}${CYAN}7)${NC} Uninstall"
+    echo -e "   ${BOLD}${CYAN}7)${NC} Update Panel"
+    echo -e "   ${BOLD}${CYAN}8)${NC} Uninstall"
     echo -e "   ${BOLD}${RED}0)${NC} Exit"
     echo -e "\n   ------------------------------------------"
     read -rp "   Select Option: " choice
@@ -373,7 +413,8 @@ main_menu() {
       4) restart_panel ;;
       5) terminal_console ;;
       6) view_logs ;;
-      7) uninstall_panel ;;
+      7) update_panel ;;
+      8) uninstall_panel ;;
       0)
         echo -e "\n${GREEN}Goodbye! 👋${NC}\n"
         exit 0
