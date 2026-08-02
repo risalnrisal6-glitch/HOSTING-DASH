@@ -169,9 +169,10 @@ EOF
   cd apps/api
   npx prisma db push 2>&1 | tee -a "$LOG_FILE"
   npx prisma generate 2>&1 | tee -a "$LOG_FILE"
+  npx tsx prisma/seed.ts 2>&1 | tee -a "$LOG_FILE"
   cd "$INSTALL_DIR"
 
-  log "Database initialized"
+  log "Database initialized & seeded (admin@nova.dev / Admin@12345)"
 
   # Build
   info "Building production assets..."
@@ -355,12 +356,67 @@ update_panel() {
   cd apps/api
   npx prisma db push 2>&1 | tee -a "$LOG_FILE"
   npx prisma generate 2>&1 | tee -a "$LOG_FILE"
+  npx tsx prisma/seed.ts 2>&1 | tee -a "$LOG_FILE"
   cd "$INSTALL_DIR"
 
   info "Building production assets..."
   npm run build 2>&1 | tee -a "$LOG_FILE"
 
   log "Update complete — starting services..."
+  start_panel
+}
+
+# ──────────────────────────────────────────────
+# Backup / Restore
+# ──────────────────────────────────────────────
+
+backup_panel() {
+  header "Backing up NOVA PANEL"
+
+  if [ ! -d "$INSTALL_DIR" ]; then
+    error "NOVA PANEL not installed. Select option 1 first."
+    return
+  fi
+
+  local dir="$HOME/nova-backups"
+  mkdir -p "$dir"
+  local file="$dir/nova-panel-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+  # SQLite database + environment (secrets included — keep the file private)
+  tar -czf "$file" -C "$INSTALL_DIR" apps/api/prisma/dash.db apps/api/.env 2>/dev/null
+  if [ -f "$file" ]; then
+    log "Backup saved: $file"
+    info "Contains the SQLite database and apps/api/.env (incl. secrets) — store securely."
+  else
+    error "Backup failed — database or .env not found?"
+  fi
+}
+
+restore_panel() {
+  header "Restore NOVA PANEL backup"
+
+  local dir="$HOME/nova-backups"
+  if [ ! -d "$dir" ] || [ -z "$(ls "$dir"/*.tar.gz 2>/dev/null)" ]; then
+    error "No backups found in $dir"
+    return
+  fi
+  if [ ! -d "$INSTALL_DIR" ]; then
+    error "NOVA PANEL not installed. Install first, then restore."
+    return
+  fi
+
+  echo -e "   ${CYAN}Available backups:${NC}"
+  ls -1 "$dir"/*.tar.gz | nl
+  echo ""
+  read -rp "Select backup number: " num
+  local file
+  file="$(ls "$dir"/*.tar.gz | sed -n "${num}p" 2>/dev/null)"
+  if [ -z "$file" ]; then
+    error "Invalid selection"
+    return
+  fi
+
+  stop_panel
+  tar -xzf "$file" -C "$INSTALL_DIR" && log "Restored from $(basename "$file")"
   start_panel
 }
 
@@ -413,7 +469,9 @@ main_menu() {
     echo -e "   ${BOLD}${CYAN}5)${NC} Terminal (Console)"
     echo -e "   ${BOLD}${CYAN}6)${NC} Logs (Info/Status)"
     echo -e "   ${BOLD}${CYAN}7)${NC} Update Panel"
-    echo -e "   ${BOLD}${CYAN}8)${NC} Uninstall"
+    echo -e "   ${BOLD}${CYAN}8)${NC} Backup"
+    echo -e "   ${BOLD}${CYAN}9)${NC} Restore"
+    echo -e "   ${BOLD}${CYAN}10)${NC} Uninstall"
     echo -e "   ${BOLD}${RED}0)${NC} Exit"
     echo -e "\n   ------------------------------------------"
     read -rp "   Select Option: " choice
@@ -426,7 +484,9 @@ main_menu() {
       5) terminal_console ;;
       6) view_logs ;;
       7) update_panel ;;
-      8) uninstall_panel ;;
+      8) backup_panel ;;
+      9) restore_panel ;;
+      10) uninstall_panel ;;
       0)
         echo -e "\n${GREEN}Goodbye! 👋${NC}\n"
         exit 0
